@@ -1,0 +1,368 @@
+---
+title: "Midterm"
+author: "Kyle Walker"
+date: "11/25/2019"
+output: html_document
+---
+### Loading in Data
+```{r}
+library(tidyverse)
+library(haven)
+hosp <- read_sas("C:/Users/student/Documents/GitHub/Midterm/hdd0318cy.sas7bdat")
+```
+
+### Exploring the hosp dataset
+```{r eval=FALSE}
+dim(hosp)
+str(hosp)
+map_int(hosp, ~sum(is.na(.)))
+```
+
+### Exploring Numeric- mean, median, sd
+```{r}
+hosp %>% 
+  select_if(is.numeric) %>% 
+    map_df(function(x) {
+      stats <- array(c(mean(x, na.rm = T), median(x, na.rm = T), sd(x, na.rm = T)), dim= 3)
+      return(stats)
+      }
+    )
+```
+
+### Exploring Categorical- shows mode and number of levels
+```{r}
+hosp %>% 
+  select_if(is.character) %>% 
+    map_df(function(x) {
+      ux <- unique(x)
+      tab <- tabulate(match(x, ux))
+      categ <- array(c(sample(as.character(x[tab == max(tab)]),1), length(table(x))))
+      return(categ)
+    })
+```
+### Subsetting the data for data that would be there upon arrival
+```{r}
+hosp_u <- subset(hosp, select = c(sex, age, raceethn, pt_state, diag_adm, campus, er_mode, provider, payer, admtype, asource, moa, yoa, los))
+hosp_u$diag_adm <- substr(hosp_u$diag_adm, 1, 3)
+hosp_u <- na.omit(hosp_u, cols='los')
+hosp_u <- hosp_u %>% 
+  filter(los >= 0)
+```
+### Creating a sample dataset and save as a csv
+```{r}
+set.seed(123)
+hosp_s <- hosp_u[sample(nrow(hosp_u), size=100000, replace = FALSE),]
+hosp_s$los <- hosp_s$los + 1
+write.csv(hosp_s, "C:/Users/student/Documents/GitHub/Midterm/hosp_s.csv", row.names = FALSE)
+```
+### Reload in sampled data if closed
+```{r}
+hosp_s <- read_csv("C:/Users/student/Documents/GitHub/Midterm/hosp_s.csv")
+```
+### Processing Data, imputing missing data, and changing variables to factors
+```{r}
+library(anchors)
+na_replace <- function(v, n) {
+  if(sum(is.na(v)) == 0) {
+    print(v)
+    print("There is no missing value.")
+  } else {
+    v[is.na(v)] <- n
+    v
+  }
+}
+na_replace(hosp_s$sex, 2)
+hosp_s$sex <- as.factor(hosp_s$sex)
+hosp_s$sex <- ifelse(hosp_s$sex == '9', '2', hosp_s$sex)
+hosp_s$sex <- as.factor(hosp_s$sex)
+hosp_s$campus <- as.factor(hosp_s$campus)
+hosp_s$campus <- ifelse(hosp_s$campus == '', '0', hosp_s$campus)
+hosp_s$campus <- as.factor(hosp_s$campus)
+hosp_s$asource <- as.factor(hosp_s$asource)
+hosp_s$asource <- ifelse(hosp_s$asource == '', '1', hosp_s$asource)
+hosp_s$asource <- as.factor(hosp_s$asource)
+hosp_s$pt_state <- ifelse(hosp_s$pt_state == '', 'RI', hosp_s$pt_state)
+hosp_s$er_mode <- as.factor(hosp_s$er_mode)
+hosp_s$er_mode <- ifelse(hosp_s$er_mode == '', '0', hosp_s$er_mode)
+hosp_s$er_mode <- as.factor(hosp_s$er_mode)
+hosp_s$raceethn <- as.factor(hosp_s$raceethn)
+hosp_s$raceethn <- ifelse(hosp_s$raceethn == '', '1', hosp_s$raceethn)
+hosp_s$raceethn <- as.factor(hosp_s$raceethn)
+hosp_s$provider <- as.factor(hosp_s$provider)
+hosp_s$payer <- as.factor(hosp_s$payer)
+hosp_s$admtype <- as.factor(hosp_s$admtype)
+hosp_s$diag_adm <- as.factor(hosp_s$diag_adm)
+```
+
+
+## Data Visualization:
+### Creating a correlogram to see numerical relationships
+```{r}
+library(ggplot2)
+library(ggcorrplot)
+library(janitor)
+
+hosp_n <- hosp_s %>% 
+  select_if(is.numeric) %>% 
+    na.omit()
+
+corr <- round(cor(hosp_n),2)
+corr <- corr %>% 
+  remove_empty("rows")
+  
+
+ggcorrplot(corr, hc.order = TRUE,
+           type = "lower",
+           lab = TRUE,
+           lab_size = 3,
+           method = "circle",
+           colors = c("tomato2", "white", "springgreen3"),
+           title = "Correlogram of hosp",
+           ggtheme = theme_bw)
+
+```
+
+### Visualizing the length of stay target variable distribution
+```{r}
+hosp_s %>% 
+  ggplot(aes(x=los)) +
+  geom_histogram(binwidth = 5) +
+  labs(x = 'Length of Stay',
+       y= 'Count',
+       title = 'Length of Stay Histogram')
+```
+
+### Looking at a log transformation applied to length of stay
+```{r}
+hosp_s %>% 
+  ggplot(aes(x=los)) +
+  geom_histogram() +
+  scale_x_log10() +
+  labs(x = 'Log(Length of Stay)',
+       y= 'Count',
+       title = 'Log Transformed Length of Stay Histogram')
+```
+
+### Bar graph looking at relationship between Provider and LoS
+```{r}
+library(reshape2)
+prov <-  hosp_s %>% 
+  group_by(provider) %>% 
+    summarize(avg = mean(los), med = median(los))
+prov_long <- melt(prov, id='provider')
+
+ggplot(prov_long, aes(x= provider, y=value, fill = variable)) +
+  geom_col(position= 'dodge') +
+  labs(x= 'Provider',
+       y= 'Average Length of Stay',
+       fill = 'Statistic',
+       title = 'Average vs Median Length of Stay by Provider')
+```
+
+### Plot of LoS by Admission Diagnosis
+```{r}
+los_avg <- hosp_s %>% 
+  group_by(diag_adm) %>% 
+    summarize(avg = mean(los)) %>% 
+      arrange(desc(avg))
+
+ggplot(los_avg, aes(x=reorder(diag_adm, avg), y=avg)) +
+  geom_col() +
+  labs(x= 'Admission Diagnosis',
+       y= 'Average Length of Stay',
+       title = 'Average Length of Stay by Admission Diagnosis')
+```
+
+### Lumping together infrequent levels in variables, and replotting the past plot
+```{r}
+require(forcats)
+hosp_l <- hosp_s %>%
+    mutate(diag_adm = fct_lump(diag_adm, n=30), pt_state = fct_lump(pt_state %>%  as.factor, n=4), asource = fct_lump(asource, n=10), payer = fct_lump(payer, 13), er_mode = fct_lump(er_mode, n=5))
+
+los_avg_l <- hosp_l %>% 
+  group_by(diag_adm) %>% 
+    summarize(avg = mean(los)) %>% 
+      arrange(desc(avg))
+
+ggplot(los_avg_l, aes(x=reorder(diag_adm, avg), y=avg)) +
+  geom_col() +
+  labs(x= 'Admission Diagnosis',
+       y= 'Average Length of Stay',
+       title = 'Average Length of Stay by Admission Diagnosis Adj')
+```
+
+### Visualizing the Average LoS by Race over Time
+```{r}
+library(gganimate)
+
+plot_l <- hosp_l %>% 
+  group_by(moa, sex, raceethn) %>% 
+    summarize(avg = mean(los))
+
+ggplot(plot_l, aes(x= moa, y= avg, color = raceethn)) +
+  geom_line() +
+  transition_reveal(moa) +
+  facet_wrap(~ sex, nrow=1) +
+  labs(x = 'Month of Arrival',
+       y= 'Average Length of Stay',
+       color = 'Race/Ethnicity',
+       title= 'Average Length of Stay by Race over Time')
+```
+
+### Switched from a numeric target to a binary target, filtered out incomplete cases
+```{r}
+hosp_s2 <- hosp_l %>% 
+  mutate(los_b = ifelse(los > 4.5, 1, 0)) 
+hosp_s2 <- subset(hosp_s2, select = -los)
+hosp_s2 = hosp_s2[complete.cases(hosp_s2),]
+hosp_s2$los_b <- as.factor(hosp_s2$los_b)
+
+ggplot(hosp_s2, aes(x= los_b)) +
+  geom_bar() +
+  labs(x='Above or Below Average Length of Stay',
+       y= 'Count',
+       title = 'Frequency of Binary Length of Stay')
+```
+### Visualized the Number of Lengthy Stays by Campus and Admission Type
+```{r}
+hosp_s2$admtype <- as.factor(hosp_s2$admtype)
+
+hosp_s2 %>% 
+  group_by(campus, admtype) %>% 
+    ggplot(aes(x=campus, y=los_b)) +
+    geom_col(aes(fill=admtype)) +
+    scale_y_discrete() +
+    labs(x = 'Campus',
+         y = 'Number of Stays over 5 Days',
+         fill = 'Admission Type',
+         title = 'Bar Graph of Lengthy Stays by Campus and Admission Type')
+
+```
+### Average Age of the LoS Levels
+```{r}
+hosp_s2 %>% 
+  group_by(los_b) %>% 
+    summarize(avg = mean(age)) %>% 
+      ggplot(aes(x=los_b, y = avg, fill=los_b, label=round(avg, 2))) +
+      geom_col() +
+      geom_label() +
+      labs(x = "Length of Stay (>4.5 days)",
+           y = "Average Age",
+           title = 'Average Age of the LoS Levels')
+```
+
+
+## Predictive Models:
+
+### Chose to predict length of stay as I believe it is important for hospitals to have a good idea of how many resources they will need to commit to a person in terms of time and space. Chose a 4.5 day split for the binary target as that is the national average, and was close to this data's average also.
+
+### Tuned the models by researching the parameters from getModelInfo, then setting a grid to search for the best parameter selection.
+
+### Creating the data partition for the data
+```{r eval=FALSE}
+library(caret)
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(e1071)
+library(rattle)
+library(rpart)
+splitIndex <- createDataPartition(hosp_s2$los_b, p = .70, list = FALSE, times =1)
+train <- hosp_s2[splitIndex,]
+test <- hosp_s2[-splitIndex,]
+```
+
+### Undersampling to create a balanced dataset and training a Random Forest
+```{r eval=FALSE}
+library(ranger)
+model = ranger(los_b ~., data = train)
+pred  = predict(model, data = test)$predictions
+cm=confusionMatrix(pred, test$los_b, positive="1")
+
+train0 = train[train$los_b == '0',]
+train1 = train[train$los_b == '1',]
+n0 = nrow(train0)
+n1 = nrow(train1)
+train00 = train0[sample(1:n0, n1),]
+train_under = rbind(train00, train1)
+model_under = ranger(los_b~., data = train_under)
+pred  = predict(model_under, data = test)$predictions
+cm_under=confusionMatrix(pred, test$los_b, positive="1")
+cm
+# Accuracy was 0.6382
+```
+
+### Tuning a Random Forest
+```{r eval=FALSE}
+myGrid1 = expand.grid(mtry = seq(from = 1, to = 5, by = 1), splitrule = 'gini', min.node.size = seq(from = 1, to = 10, by = 1))
+model1 <- train(los_b ~ ., data = train_under, method = 'ranger', tuneGrid = myGrid1)
+print(model1)
+plot(model1)
+pred = predict(model1, test)
+cm = confusionMatrix(pred, test$los_b, positive = "1")
+cm$overall[[1]]
+# Accuracy was 0.6394183
+# Tuning Parameters were mtry = 5, splitrule = 'gini', min.node.size = 5
+```
+
+
+### Training a Decision Tree
+```{r eval=FALSE}
+mytree <- rpart(los_b ~ ., data = train_under, method = "class")
+fancyRpartPlot(mytree)
+pred <- predict(mytree,test, type = "class")
+cm=confusionMatrix(data = pred, reference = test$los_b, positive = "1")
+cm
+# Accuracy was 0.6164
+```
+### Tuning a Decision Tree
+```{r eval=FALSE}
+myGrid = expand.grid(cp = seq(from = 0, to = 1, by = .05))
+dTree <- train(los_b ~ ., data = train_under, method = 'rpart', tuneGrid = myGrid)
+print(dTree)
+plot(dTree)
+pred = predict(dTree, test)
+cm = confusionMatrix(pred, test$los_b, positive = "1")
+cm$overall[[1]]
+# Accuracy was 0.6031637
+# Tuning parameter was cp=0
+```
+
+### Adaboosted Decision Tree
+```{r eval=FALSE}
+library(ada)
+tr_cntrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
+myGrid3 = expand.grid(iter = seq(from=50, to = 100, by=10), maxdepth = c(1:6), nu= 0.1)
+adaBoost <- train(los_b ~ ., data = train_under, method = 'ada', tuneGrid = myGrid3, trControl = tr_cntrl)
+pred <- predict(adaBoost, test)
+cm1=confusionMatrix(data = pred, reference = test$los_b, positive = "1")
+cm1$overall[[1]]
+#Accuracy was 0.6278738
+```
+
+### Creating and Tuning a Neural Network
+```{r eval=FALSE}
+library(nnet)
+tr_cntrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
+myGrid4 = expand.grid(size = c(1:5), decay = c(.0001, .001, .01, .1))
+NN <- train(los_b ~ ., data = train_under, method = 'nnet', tuneGrid = myGrid4, trControl = tr_cntrl)
+pred <- predict(NN, test)
+# Accuracy was 0.6417273
+```
+
+### NN
+```{r eval=FALSE}
+cm=confusionMatrix(data = pred, reference = test$los_b, positive = "1")
+cm$overall[[1]]
+```
+
+```{r eval= FALSE, warning=FALSE}
+logistic <- train(los_b ~ ., data = train_under, method = 'glm', family = "binomial")
+pred <- predict(logistic, test)
+cm1=confusionMatrix(data = pred, reference = test$los_b, positive = "1")
+cm1$overall[[1]]
+# Accuracy was 0.6422676
+```
+
+### None of the models resulting in an accuracy score of over .7. I believe this could be attributed to not having enough of a difference in the characteristics of people who stay 4.5 days or less, and people who stay 4.5 days or more. More data analysis could be done to provide evidence for that. In the future, I would have changed the target to a longer length of stay which would make predicting a binary target much easier. I also could have increased the complexity of the models and allowed them to tune for a lot longer, time permitting.
+

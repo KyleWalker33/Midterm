@@ -1,0 +1,149 @@
+---
+title: "Midterm Presentation"
+author: "Kyle Walker"
+date: "11/25/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(readr)
+hosp_s <- read_csv("C:/Users/student/Documents/GitHub/Midterm/hosp_s.csv")
+library(anchors)
+na_replace <- function(v, n) {
+  if(sum(is.na(v)) == 0) {
+    print(v)
+    print("There is no missing value.")
+  } else {
+    v[is.na(v)] <- n
+    v
+  }
+}
+na_replace(hosp_s$sex, 2)
+hosp_s$sex <- as.factor(hosp_s$sex)
+hosp_s$sex <- ifelse(hosp_s$sex == '9', '2', hosp_s$sex)
+hosp_s$sex <- as.factor(hosp_s$sex)
+hosp_s$campus <- as.factor(hosp_s$campus)
+hosp_s$campus <- ifelse(hosp_s$campus == '', '0', hosp_s$campus)
+hosp_s$campus <- as.factor(hosp_s$campus)
+hosp_s$asource <- as.factor(hosp_s$asource)
+hosp_s$asource <- ifelse(hosp_s$asource == '', '1', hosp_s$asource)
+hosp_s$asource <- as.factor(hosp_s$asource)
+hosp_s$pt_state <- ifelse(hosp_s$pt_state == '', 'RI', hosp_s$pt_state)
+hosp_s$er_mode <- as.factor(hosp_s$er_mode)
+hosp_s$er_mode <- ifelse(hosp_s$er_mode == '', '0', hosp_s$er_mode)
+hosp_s$er_mode <- as.factor(hosp_s$er_mode)
+hosp_s$raceethn <- as.factor(hosp_s$raceethn)
+hosp_s$raceethn <- ifelse(hosp_s$raceethn == '', '1', hosp_s$raceethn)
+hosp_s$raceethn <- as.factor(hosp_s$raceethn)
+hosp_s$provider <- as.factor(hosp_s$provider)
+hosp_s$payer <- as.factor(hosp_s$payer)
+hosp_s$admtype <- as.factor(hosp_s$admtype)
+hosp_s$diag_adm <- as.factor(hosp_s$diag_adm)
+graph1 <- hosp_s %>% 
+  ggplot(aes(x=los)) +
+  geom_histogram(binwidth = 5) +
+  labs(x = 'Length of Stay',
+       y= 'Count',
+       title = 'Length of Stay Histogram')
+graph2 <- hosp_s %>% 
+  ggplot(aes(x=los)) +
+  geom_histogram() +
+  scale_x_log10() +
+  labs(x = 'Log(Length of Stay)',
+       y= 'Count',
+       title = 'Log Transformed Length of Stay Histogram')
+
+require(forcats)
+hosp_l <- hosp_s %>%
+    mutate(diag_adm = fct_lump(diag_adm, n=30), pt_state = fct_lump(pt_state %>%  as.factor, n=4), asource = fct_lump(asource, n=10), payer = fct_lump(payer, 13), er_mode = fct_lump(er_mode, n=5))
+
+hosp_s2 <- hosp_l %>% 
+  mutate(los_b = ifelse(los > 4.5, 1, 0)) 
+hosp_s2 <- subset(hosp_s2, select = -los)
+hosp_s2 = hosp_s2[complete.cases(hosp_s2),]
+hosp_s2$los_b <- as.factor(hosp_s2$los_b)
+
+graph3 <- ggplot(hosp_s2, aes(x= los_b)) +
+  geom_bar() +
+  labs(x='Above or Below Average Length of Stay',
+       y= 'Count',
+       title = 'Frequency of Binary Length of Stay')
+
+library(reshape2)
+prov <-  hosp_s %>% 
+  group_by(provider) %>% 
+    summarize(avg = mean(los), med = median(los))
+prov_long <- melt(prov, id='provider')
+
+graph4 <- ggplot(prov_long, aes(x= provider, y=value, fill = variable)) +
+  geom_col(position= 'dodge') +
+  labs(x= 'Provider',
+       y= 'Average Length of Stay',
+       fill = 'Statistic',
+       title = 'Average vs Median Length of Stay by Provider')
+```
+
+
+## Length of Stay
+
+- I chose to predict the length of stay of a patient
+- Broke up the target variable into over/under 4.5 days at the hospital
+- Chose that split based on the national average
+
+
+## Visualizing the Length of Stay
+```{r echo = FALSE, warning = FALSE}
+graph1
+```
+
+## Log Transformed Length of Stay
+```{r echo = FALSE, warnings = FALSE, message=FALSE}
+graph2
+```
+
+
+## Switched to Binary Length of Stay
+```{r echo=FALSE, warning=FALSE}
+graph3
+```
+
+
+## Length of Stay by Provider
+```{r echo=FALSE, warning=FALSE}
+graph4
+```
+
+
+## Data Cleaning Methods
+
+- Only used variables that would be known upon patient arrival
+- Changed most of these to factors
+- Did lots of mode imputation
+- Left some nulls if the mode imputation was deemed unreliable
+- Took only the first three characters of the diag_adm to remain broad
+- Factor lumped to get rid of infrequent levels
+- Filtered out incomplete cases after these steps
+
+## Model Results
+
+- Random Forest: 0.6382
+- Tuned Random Forest: 0.6394
+- Decision Tree: 0.6164
+- Tuned Decision Tree: 0.6037
+- Adaboosted Decision Tree: 0.6279
+- Neural Network: 0.6417
+- Logistic Regression: 0.6422
+- Strongest: Logistic Regression
+
+## Future Studies
+
+- Increase model complexity by increasing ranges the tuning grid would evaluate
+- Improve imputation methods, would look into KNN
+- Adjust the split for the target variable, too homogenous
+- Increase the sample size of the data
