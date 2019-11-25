@@ -130,6 +130,12 @@ graph4
 - Factor lumped to get rid of infrequent levels
 - Filtered out incomplete cases after these steps
 
+## Prepping for the Modeling
+
+- Worked with 67,856 complete cases
+- Split 70/30 Training/Testing
+- Rebalanced the dataset despite a slight imbalance
+
 ## Model Results
 
 - Random Forest: 0.6382
